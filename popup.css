@@ -18,7 +18,7 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  width: 400px;
+  width: 550px;
   height: 500px;
   background-color: var(--bg);
   color: var(--text);
@@ -82,12 +82,25 @@ main {
 /* Dashboard Styles */
 .summary-card {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   background: var(--surface);
   padding: 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
   margin-bottom: 16px;
+  gap: 8px;
+}
+
+.chart-container {
+  position: relative;
+  height: 250px;
+  width: 100%;
+  margin-bottom: 16px;
+  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 8px;
 }
 
 .stat {
@@ -123,7 +136,8 @@ table {
   font-size: 13px;
 }
 
-th, td {
+th,
+td {
   padding: 10px;
   text-align: left;
   border-bottom: 1px solid var(--border);
@@ -135,19 +149,48 @@ th {
   color: var(--text-muted);
 }
 
-td:last-child, th:last-child {
+td:last-child,
+th:last-child {
   text-align: right;
 }
 
-.diff-pos { color: var(--danger); }
-.diff-neg { color: var(--success); }
-
-.actions {
-    display: flex;
-    gap: 8px;
+.diff-pos {
+  color: var(--danger);
 }
 
-.primary-btn, .secondary-btn, .save-btn {
+.diff-neg {
+  color: var(--success);
+}
+
+/* Forecast column styles */
+.forecast-over {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.forecast-under {
+  color: var(--success);
+  font-weight: 500;
+}
+
+.forecast-neutral {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.forecast-unplanned {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.primary-btn,
+.secondary-btn,
+.save-btn {
   width: 100%;
   padding: 10px;
   border-radius: 6px;
@@ -157,19 +200,21 @@ td:last-child, th:last-child {
   font-size: 14px;
 }
 
-.primary-btn, .save-btn {
+.primary-btn,
+.save-btn {
   background: var(--primary);
   color: white;
 }
 
-.primary-btn:hover, .save-btn:hover {
+.primary-btn:hover,
+.save-btn:hover {
   background: var(--primary-hover);
 }
 
 .secondary-btn {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
 }
 
 /* Settings Styles */
@@ -236,8 +281,13 @@ td:last-child, th:last-child {
   border-radius: 4px;
 }
 
-.add-project input[type="text"] { flex: 1; }
-.add-project input[type="number"] { width: 70px; }
+.add-project input[type="text"] {
+  flex: 1;
+}
+
+.add-project input[type="number"] {
+  width: 70px;
+}
 
 #btn-add-project {
   padding: 0 12px;

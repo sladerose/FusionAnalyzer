@@ -15,11 +15,84 @@ document.addEventListener('DOMContentLoaded', () => {
     let plannedHours = {};
     let actualHours = {}; // To hold data from XLSX
 
+    // --- Helper Functions ---
+    function getWorkingDaysInMonth(year, month) {
+        // month is 0-indexed (0 = January)
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        let workingDays = 0;
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const date = new Date(year, month, day);
+            const dayOfWeek = date.getDay();
+            // 0 = Sunday, 6 = Saturday
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                workingDays++;
+            }
+        }
+        return workingDays;
+    }
+
+    function getWorkingDaysElapsed(year, month) {
+        const today = new Date();
+        const currentDay = today.getDate();
+        const currentMonth = today.getMonth();
+        const currentYear = today.getFullYear();
+
+        // If not current month, return 0 or full month
+        if (year !== currentYear || month !== currentMonth) {
+            if (year < currentYear || (year === currentYear && month < currentMonth)) {
+                return getWorkingDaysInMonth(year, month); // Past month, all days elapsed
+            }
+            return 0; // Future month
+        }
+
+        let workingDays = 0;
+        for (let day = 1; day <= currentDay; day++) {
+            const date = new Date(year, month, day);
+            const dayOfWeek = date.getDay();
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                workingDays++;
+            }
+        }
+        return workingDays;
+    }
+
+    function calculateForecast(actual, planned) {
+        if (planned === 0) {
+            return { text: "Unplanned", class: "forecast-unplanned" };
+        }
+
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+
+        const totalWorkingDays = getWorkingDaysInMonth(currentYear, currentMonth);
+        const daysElapsed = getWorkingDaysElapsed(currentYear, currentMonth);
+
+        if (daysElapsed === 0) {
+            return { text: "No data", class: "forecast-neutral" };
+        }
+
+        const dailyBurnRate = actual / daysElapsed;
+        const projectedTotal = dailyBurnRate * totalWorkingDays;
+        const difference = projectedTotal - planned;
+
+        if (Math.abs(difference) < 2) {
+            return { text: "On track", class: "forecast-neutral" };
+        } else if (difference > 0) {
+            return { text: `Over by ${formatHours(difference)}`, class: "forecast-over" };
+        } else {
+            return { text: `Under by ${formatHours(Math.abs(difference))}`, class: "forecast-under" };
+        }
+    }
+
     // --- Initialization ---
     loadSettings().then(() => {
         renderSettings();
         // Auto-load data if on dashboard
-        refreshDashboard();
+        if (tabDashboard.classList.contains('active')) {
+            refreshDashboard();
+        }
     });
 
     // --- Event Listeners ---
@@ -120,12 +193,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const worksheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-                const parsedHours = parseXLSXData(jsonData);
+                const parsedData = parseXLSXData(jsonData);
 
                 // Store in state and chrome.storage
-                actualHours = parsedHours;
+                actualHours = parsedData;
                 chrome.storage.local.set({ actualHours: actualHours }, () => {
-                    const projectCount = Object.keys(actualHours).length;
+                    const projectCount = Object.keys(actualHours).filter(key => key !== 'meta').length;
                     const timestamp = new Date().toLocaleString();
                     uploadStatus.textContent = `✓ Uploaded ${projectCount} projects at ${timestamp}`;
                     uploadStatus.style.color = '#28a745';
@@ -222,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function refreshDashboard() {
         // 1. First, check if we have actuals from a previous XLSX upload
-        if (actualHours && Object.keys(actualHours).length > 0) {
+        if (actualHours && Object.keys(actualHours).filter(key => key !== 'meta').length > 0) {
             console.log("Rendering dashboard from stored XLSX data.");
             renderTable(actualHours);
             return; // Don't proceed to scrape
@@ -253,8 +326,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     if (response && response.success) {
+                        // Note: Scraped data would be a simple projectName -> totalHours map.
+                        // We might need to adapt renderTable or store this differently later if we want
+                        // a consistent actualHours structure for scraped vs. XLSX data.
                         actualHours = response.data; // Cache scraped data
-                        renderTable(response.data);
+                        renderTable(actualHours);
+                    } else if (response && response.error === "WRONG_PAGE_DASHBOARD") {
+                        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #d9534f; padding: 20px;"><b>Wrong Page Detected</b><br>You are on the Dashboard.<br>Please navigate to the <b>Daily Timesheet</b> page and click Refresh.</td></tr>';
                     } else {
                         renderTable({});
                     }
@@ -269,24 +347,43 @@ document.addEventListener('DOMContentLoaded', () => {
         // Merge keys
         const allProjects = new Set([
             ...Object.keys(plannedHours),
-            ...Object.keys(currentActuals || {})
+            ...Object.keys(currentActuals || {}).filter(key => key !== 'meta')
         ]);
 
         const sortedProjects = Array.from(allProjects).sort();
 
         let totalActual = 0;
         let totalPlanned = 0;
+        let unplannedWork = 0;
 
         if (sortedProjects.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #666;">No data to display. Upload an XLSX file or refresh on a Fusion page.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #666;">No data to display. Upload an XLSX file or refresh on a Fusion page.</td></tr>';
         } else {
             sortedProjects.forEach(proj => {
-                const actual = (currentActuals || {})[proj] || 0;
+                // Handle both scraped data (simple numbers) and XLSX data (objects with total/totalHours)
+                let actual = 0;
+                if (currentActuals && currentActuals[proj]) {
+                    if (typeof currentActuals[proj] === 'number') {
+                        actual = currentActuals[proj]; // Scraped data
+                    } else if (currentActuals[proj].total !== undefined) {
+                        actual = currentActuals[proj].total; // New XLSX structure
+                    } else if (currentActuals[proj].totalHours !== undefined) {
+                        actual = currentActuals[proj].totalHours; // Old XLSX structure
+                    }
+                }
                 const planned = plannedHours[proj] || 0;
                 const diff = actual - planned;
 
                 totalActual += actual;
                 totalPlanned += planned;
+
+                // Track unplanned work (actual hours with no planned hours)
+                if (planned === 0 && actual > 0) {
+                    unplannedWork += actual;
+                }
+
+                // Calculate forecast
+                const forecast = calculateForecast(actual, planned);
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -294,6 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${formatHours(actual)}</td>
                     <td>${formatHours(planned)}</td>
                     <td class="${diff > 0 ? 'diff-pos' : (diff < 0 ? 'diff-neg' : '')}">${diff > 0 ? '+' : ''}${formatHours(diff)}</td>
+                    <td class="${forecast.class}">${forecast.text}</td>
                 `;
                 tableBody.appendChild(tr);
             });
@@ -301,6 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('total-actual').textContent = formatHours(totalActual);
         document.getElementById('total-planned').textContent = formatHours(totalPlanned);
+        document.getElementById('unplanned-work').textContent = formatHours(unplannedWork);
 
         const totalDiff = totalActual - totalPlanned;
         const diffEl = document.getElementById('total-diff');

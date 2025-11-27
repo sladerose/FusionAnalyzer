@@ -5,8 +5,12 @@ console.log("Fusion Analyzer: Content script loaded.");
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "scrape_hours") {
-        const data = scrapeTimesheet();
-        sendResponse({ success: true, data: data });
+        const result = scrapeTimesheet();
+        if (result.error) {
+            sendResponse({ success: false, error: result.error });
+        } else {
+            sendResponse({ success: true, data: result });
+        }
     } else if (request.action === "debug_html") {
         // Return a simplified structure of the page for debugging
         sendResponse({ success: true, html: document.body.innerHTML });
@@ -23,7 +27,6 @@ function scrapeTimesheet() {
     let targetTable = null;
     let headerRowIndex = -1;
     let projectNameColIndex = -1;
-    let dateColIndices = [];
 
     // 1. Find the correct table and column indices
     for (const table of tables) {
@@ -49,27 +52,26 @@ function scrapeTimesheet() {
 
     if (!targetTable) {
         console.error("Fusion Analyzer: Could not find timesheet table.");
+        // Check if we're on the Dashboard page
+        if (document.getElementById("NotificationPopup") || document.querySelector(".dashboardMessagesDiv")) {
+            console.log("Fusion Analyzer: Detected Dashboard page.");
+            return { error: "WRONG_PAGE_DASHBOARD" };
+        }
         return {};
     }
 
     // 2. Parse the rows
     const rows = targetTable.querySelectorAll("tr");
-
-    // We need to identify which columns are "Hours" columns.
-    // The Python script logic was: Proj Name (0), Work Code (1), then pairs of (Date, Comment) or just Date?
-    // Python script: `for c_idx in range(2, len(row_series))` and checked if header was a date.
-    // Let's do the same. Look at the header row again.
     const headerCells = rows[headerRowIndex].querySelectorAll("th, td");
     const hourColumnIndices = [];
 
     for (let c = projectNameColIndex + 1; c < headerCells.length; c++) {
         const text = headerCells[c].innerText.trim();
-        // Check if it looks like a date (DD/MM or YYYY-MM-DD)
-        // or just assume all columns are potential hours if they contain numbers in body
-        // Let's be aggressive: if the header is NOT "Total" or "Comments", treat as date col
-        if (!text.toLowerCase().includes("comment") && !text.toLowerCase().includes("total") && text.length > 0) {
-            hourColumnIndices.push(c);
+        // Skip "Total", "Comments"
+        if (text.toLowerCase().includes("comment") || text.toLowerCase().includes("total") || text.length === 0) {
+            continue;
         }
+        hourColumnIndices.push(c);
     }
 
     // Iterate data rows
@@ -82,7 +84,6 @@ function scrapeTimesheet() {
         if (!rawProjectName || rawProjectName.startsWith("Total") || rawProjectName.startsWith("Report Date")) continue;
 
         // Clean the name
-        // Note: cleanProjectName is available because we include utils.js in manifest content_scripts
         const cleanName = cleanProjectName(rawProjectName);
 
         let rowTotal = 0;

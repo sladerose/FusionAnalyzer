@@ -58,12 +58,31 @@ function formatHours(num) {
  * Parses the complex structure of a Fusion Timesheet Export XLSX file.
  * This is a port of the original Python script's parsing logic.
  * @param {Array<Array<any>>} sheetData - The raw sheet data from XLSX.utils.sheet_to_json(..., {header: 1}).
- * @returns {Object} - An object mapping cleaned project names to their total actual hours.
+ * @returns {Object} - An object with detailed project data including daily hours and metadata.
+ *   Example:
+ *   {
+ *       "Project Name A": {
+ *           "dailyHours": {
+ *               "YYYY-MM-DD": hours,
+ *               // ...
+ *           },
+ *           "totalHours": total_sum_of_daily_hours
+ *       },
+ *       "meta": {
+ *           "startDate": "YYYY-MM-DD",
+ *           "endDate": "YYYY-MM-DD"
+ *       }
+ *   }
  */
 function parseXLSXData(sheetData) {
-    const projectHours = {};
+    const projectData = {}; // Stores all project data with daily breakdown
+    projectData.meta = {}; // Stores metadata like date range
+
     let startDateRange = null;
     let endDateRange = null;
+
+    // Helper to format date to YYYY-MM-DD string
+    const formatDate = (date) => date.toISOString().split('T')[0];
 
     // --- 1. First Pass: Find the overall report date range ---
     for (const row of sheetData) {
@@ -81,8 +100,7 @@ function parseXLSXData(sheetData) {
                 endDateRange.setHours(0, 0, 0, 0);
             } catch (e) {
                 console.error("Could not parse report date range:", dateRangeStr, e);
-                // If we can't parse dates, we can't reliably sum hours.
-                return {}; 
+                return {};
             }
             break; // Found it, no need to continue loop
         }
@@ -92,6 +110,9 @@ function parseXLSXData(sheetData) {
         console.error("Could not find 'Report Date From' row in the sheet.");
         return {};
     }
+
+    projectData.meta.startDate = formatDate(startDateRange);
+    projectData.meta.endDate = formatDate(endDateRange);
 
     // --- 2. Second Pass: Iterate through rows to find headers and data ---
     let currentWeekDateCols = {}; // Stores {columnIndex: DateObject}
@@ -110,10 +131,9 @@ function parseXLSXData(sheetData) {
                 // The 'xlsx' library can auto-convert dates. It might be a JS Date object.
                 if (cellValue instanceof Date) {
                     currentColDate = cellValue;
-                } 
+                }
                 // Or it might be a number (Excel's date serial number)
                 else if (typeof cellValue === 'number' && cellValue > 1) {
-                    // XLSX.SSF.parse_date_code is not available in the minified version, so we use a simpler conversion
                     currentColDate = new Date(Date.UTC(1899, 11, 30) + cellValue * 86400000);
                 }
                 // Or a string 'DD/MM/YYYY'
@@ -134,29 +154,44 @@ function parseXLSXData(sheetData) {
             }
             continue; // Move to the next row after processing the header
         }
-        
+
         // --- C. Process data rows ---
         const projectNameRaw = row[0];
-        if (projectNameRaw && typeof projectNameRaw === 'string' && 
+        if (projectNameRaw && typeof projectNameRaw === 'string' &&
             projectNameRaw.trim() !== '' &&
             !projectNameRaw.startsWith("Project Name") &&
             !projectNameRaw.startsWith("Total Hours") &&
             !projectNameRaw.startsWith("Report Date From:") &&
             !projectNameRaw.startsWith("Date & Time Exported:") &&
-            !projectNameRaw.toLowerCase().startsWith("signature")) 
+            !projectNameRaw.startsWith("Staff Name:") &&
+            !projectNameRaw.startsWith("Employee Number:") &&
+            !projectNameRaw.toLowerCase().startsWith("signature"))
         {
             const projectNameClean = cleanProjectName(projectNameRaw);
-            
+
+            // Initialize project data if not already present
+            if (!projectData[projectNameClean]) {
+                projectData[projectNameClean] = {
+                    dailyHours: {},
+                    totalHours: 0
+                };
+            }
+
             for (const c_idx in currentWeekDateCols) {
                 const hoursVal = row[c_idx];
                 if (hoursVal === null || hoursVal === undefined || isNaN(parseFloat(hoursVal))) {
                     continue;
                 }
-                
+
                 try {
                     const hours = parseFloat(hoursVal);
                     if (hours > 0) {
-                        projectHours[projectNameClean] = (projectHours[projectNameClean] || 0) + hours;
+                        const dateString = formatDate(currentWeekDateCols[c_idx]);
+                        // Add daily hours
+                        projectData[projectNameClean].dailyHours[dateString] =
+                            (projectData[projectNameClean].dailyHours[dateString] || 0) + hours;
+                        // Keep track of total hours
+                        projectData[projectNameClean].totalHours += hours;
                     }
                 } catch (e) {
                     // Ignore cells that can't be parsed as a number
@@ -165,5 +200,5 @@ function parseXLSXData(sheetData) {
         }
     }
 
-    return projectHours;
+    return projectData;
 }

@@ -346,8 +346,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('total-actual').textContent = formatHours(totalActual);
         document.getElementById('total-planned').textContent = formatHours(totalPlanned);
-        document.getElementById('total-actual-planned').textContent = formatHours(totalActualPlannedWork); // New line
-        document.getElementById('unplanned-work').textContent = formatHours(unplannedWork);
+
+        // Apply color coding to Actual Planned
+        const totalActualPlannedEl = document.getElementById('total-actual-planned');
+        totalActualPlannedEl.textContent = formatHours(totalActualPlannedWork);
+        let actualPlannedClass = '';
+        const plannedPerformanceDiff = totalActualPlannedWork - totalPlanned;
+        const amberBuffer = 5; // Define buffer for amber zone
+
+        if (plannedPerformanceDiff >= 0) {
+            actualPlannedClass = 'actual-planned-green'; // Ahead or on par
+        } else if (plannedPerformanceDiff > -amberBuffer) {
+            actualPlannedClass = 'actual-planned-amber'; // Slightly behind
+        } else {
+            actualPlannedClass = 'actual-planned-red'; // Lagging badly
+        }
+        totalActualPlannedEl.className = 'value ' + actualPlannedClass;
+
+        const unplannedWorkEl = document.getElementById('unplanned-work');
+        unplannedWorkEl.textContent = formatHours(unplannedWork);
+        unplannedWorkEl.className = 'value unplanned-red-text'; // Always red for unplanned
 
         const totalDiff = totalActual - totalPlanned;
         const diffEl = document.getElementById('total-diff');

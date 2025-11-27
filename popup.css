@@ -82,14 +82,15 @@ main {
 /* Dashboard Styles */
 .summary-card {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  flex-wrap: wrap; /* Allow wrapping if space is too tight */
+  justify-content: space-around; /* Distribute items evenly */
+  align-items: center;
   background: var(--surface);
   padding: 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
   margin-bottom: 16px;
-  gap: 8px;
+  gap: 8px; /* Space between stat items */
 }
 
 .chart-container {
@@ -107,17 +108,21 @@ main {
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex: 1; /* Allow stats to grow and shrink */
+  min-width: 80px; /* Ensure a minimum width for each stat */
+  padding: 4px 0;
 }
 
 .stat .label {
-  font-size: 11px;
+  font-size: 10px; /* Slightly smaller for individual stats */
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap; /* Prevent label wrapping */
 }
 
 .stat .value {
-  font-size: 16px;
+  font-size: 14px; /* Slightly smaller for individual stats */
   font-weight: 600;
   margin-top: 4px;
 }
@@ -154,6 +159,7 @@ th:last-child {
   text-align: right;
 }
 
+/* Color classes for summary values */
 .diff-pos {
   color: var(--danger);
 }
@@ -161,6 +167,23 @@ th:last-child {
 .diff-neg {
   color: var(--success);
 }
+
+.unplanned-red-text {
+  color: var(--danger); /* Always red for unplanned */
+}
+
+.actual-planned-green {
+  color: var(--success); /* Ahead of schedule */
+}
+
+.actual-planned-amber {
+  color: orange; /* Slightly behind */
+}
+
+.actual-planned-red {
+  color: var(--danger); /* Lagging badly */
+}
+
 
 /* Forecast column styles */
 .forecast-over {

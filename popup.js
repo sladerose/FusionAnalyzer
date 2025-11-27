@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // State
     let plannedHours = {};
+    let actualHours = {}; // To hold data from XLSX
 
     // --- Initialization ---
     loadSettings().then(() => {
@@ -22,7 +23,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Event Listeners ---
-    tabDashboard.addEventListener('click', () => switchTab('dashboard'));
+    tabDashboard.addEventListener('click', () => {
+        switchTab('dashboard');
+        refreshDashboard(); // Refresh data when switching to the dashboard
+    });
     tabSettings.addEventListener('click', () => switchTab('settings'));
 
     function switchTab(tabName) {
@@ -59,7 +63,11 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshDashboard();
     });
 
-    btnRefresh.addEventListener('click', refreshDashboard);
+    btnRefresh.addEventListener('click', () => {
+        // Clear stored actuals from XLSX before scraping anew
+        actualHours = {};
+        chrome.storage.local.remove('actualHours', refreshDashboard);
+    });
 
     btnDebug.addEventListener('click', () => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -112,9 +120,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const worksheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-                const actualHours = parseXLSXData(jsonData);
+                const parsedHours = parseXLSXData(jsonData);
 
-                // Store in chrome.storage
+                // Store in state and chrome.storage
+                actualHours = parsedHours;
                 chrome.storage.local.set({ actualHours: actualHours }, () => {
                     const projectCount = Object.keys(actualHours).length;
                     const timestamp = new Date().toLocaleString();
@@ -143,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadSettings() {
         return new Promise((resolve) => {
-            chrome.storage.local.get(['plannedHours'], (result) => {
+            chrome.storage.local.get(['plannedHours', 'actualHours'], (result) => {
                 if (result.plannedHours) {
                     plannedHours = result.plannedHours;
                 } else {
@@ -151,6 +160,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     plannedHours = {
                         "Example Project": 40
                     };
+                }
+                if (result.actualHours) {
+                    actualHours = result.actualHours;
                 }
                 resolve();
             });
@@ -209,43 +221,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function refreshDashboard() {
-        // 1. Get Actuals from Content Script
+        // 1. First, check if we have actuals from a previous XLSX upload
+        if (actualHours && Object.keys(actualHours).length > 0) {
+            console.log("Rendering dashboard from stored XLSX data.");
+            renderTable(actualHours);
+            return; // Don't proceed to scrape
+        }
+
+        // 2. If not, try to get Actuals from Content Script
+        console.log("No stored XLSX data found. Attempting to scrape from content script.");
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             const activeTab = tabs[0];
-            if (!activeTab) return;
+            if (!activeTab || !activeTab.id) {
+                renderTable({}); // Clear table if tab is not accessible
+                return;
+            }
 
-            // Inject script if needed (activeTab permission)
             chrome.scripting.executeScript({
                 target: { tabId: activeTab.id },
                 files: ['scripts/utils.js', 'scripts/content.js']
             }, () => {
-                // Ignore error if script is already there or injection fails (e.g. chrome:// pages)
                 if (chrome.runtime.lastError) {
-                    // console.log("Injection result:", chrome.runtime.lastError);
+                    renderTable({}); // Clear table on injection error
+                    return;
                 }
 
-                // Now ask for data
                 chrome.tabs.sendMessage(activeTab.id, { action: "scrape_hours" }, (response) => {
                     if (chrome.runtime.lastError) {
-                        console.warn("Content script not found:", chrome.runtime.lastError);
+                        renderTable({}); // Clear table if message fails
                         return;
                     }
 
                     if (response && response.success) {
+                        actualHours = response.data; // Cache scraped data
                         renderTable(response.data);
+                    } else {
+                        renderTable({});
                     }
                 });
             });
         });
     }
 
-    function renderTable(actualHours) {
+    function renderTable(currentActuals) {
         tableBody.innerHTML = '';
 
         // Merge keys
         const allProjects = new Set([
             ...Object.keys(plannedHours),
-            ...Object.keys(actualHours)
+            ...Object.keys(currentActuals || {})
         ]);
 
         const sortedProjects = Array.from(allProjects).sort();
@@ -253,23 +277,27 @@ document.addEventListener('DOMContentLoaded', () => {
         let totalActual = 0;
         let totalPlanned = 0;
 
-        sortedProjects.forEach(proj => {
-            const actual = actualHours[proj] || 0;
-            const planned = plannedHours[proj] || 0;
-            const diff = actual - planned;
+        if (sortedProjects.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #666;">No data to display. Upload an XLSX file or refresh on a Fusion page.</td></tr>';
+        } else {
+            sortedProjects.forEach(proj => {
+                const actual = (currentActuals || {})[proj] || 0;
+                const planned = plannedHours[proj] || 0;
+                const diff = actual - planned;
 
-            totalActual += actual;
-            totalPlanned += planned;
+                totalActual += actual;
+                totalPlanned += planned;
 
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${proj}</td>
-                <td>${formatHours(actual)}</td>
-                <td>${formatHours(planned)}</td>
-                <td class="${diff > 0 ? 'diff-pos' : (diff < 0 ? 'diff-neg' : '')}">${diff > 0 ? '+' : ''}${formatHours(diff)}</td>
-            `;
-            tableBody.appendChild(tr);
-        });
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${proj}</td>
+                    <td>${formatHours(actual)}</td>
+                    <td>${formatHours(planned)}</td>
+                    <td class="${diff > 0 ? 'diff-pos' : (diff < 0 ? 'diff-neg' : '')}">${diff > 0 ? '+' : ''}${formatHours(diff)}</td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
 
         document.getElementById('total-actual').textContent = formatHours(totalActual);
         document.getElementById('total-planned').textContent = formatHours(totalPlanned);

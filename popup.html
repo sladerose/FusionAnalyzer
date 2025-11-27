@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fusion Timesheet Analyzer</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>Fusion Analyzer</h1>
+      <div class="tabs">
+        <button id="tab-dashboard" class="tab-btn active">Dashboard</button>
+        <button id="tab-settings" class="tab-btn">Settings</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Dashboard Tab -->
+      <section id="view-dashboard" class="tab-content active">
+        <div class="summary-card">
+          <div class="stat">
+            <span class="label">Total Actual</span>
+            <span class="value" id="total-actual">0.00</span>
+          </div>
+          <div class="stat">
+            <span class="label">Total Planned</span>
+            <span class="value" id="total-planned">0.00</span>
+          </div>
+          <div class="stat">
+            <span class="label">Difference</span>
+            <span class="value" id="total-diff">0.00</span>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table id="analysis-table">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Actual</th>
+                <th>Planned</th>
+                <th>Diff</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Rows injected by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="actions">
+          <button id="btn-refresh" class="primary-btn">Refresh Data</button>
+          <button id="btn-debug" class="secondary-btn">Debug (Copy HTML)</button>
+        </div>
+      </section>
+
+      <!-- Settings Tab -->
+      <section id="view-settings" class="tab-content">
+        <div class="settings-header">
+          <h2>Upload Actuals (XLSX)</h2>
+          <p>Upload your monthly timesheet export from Fusion.</p>
+        </div>
+
+        <div class="upload-section">
+          <input type="file" id="xlsx-upload" accept=".xlsx,.xls" style="display: none;">
+          <button type="button" id="btn-upload-xlsx" class="primary-btn">Choose XLSX File</button>
+          <p id="upload-status" style="margin-top: 10px; font-size: 12px; color: #666;"></p>
+          <details style="margin-top: 10px; font-size: 12px; color: #666;">
+            <summary style="cursor: pointer; color: #08bcf2;">How to export from Fusion</summary>
+            <ol style="margin-top: 5px; padding-left: 20px;">
+              <li>Go to Fusion Daily Timesheet</li>
+              <li>Set date range to "Month to Date"</li>
+              <li>Click "EXPORT" button</li>
+              <li>Upload the downloaded XLSX file here</li>
+            </ol>
+          </details>
+        </div>
+
+        <hr style="margin: 20px 0; border: 1px solid #e5e5e5;">
+
+        <div class="settings-header">
+          <h2>Planned Hours</h2>
+          <p>Set your monthly targets per project.</p>
+        </div>
+
+        <form id="settings-form">
+          <div id="projects-list">
+            <!-- Project inputs injected by JS -->
+          </div>
+
+          <div class="add-project">
+            <input type="text" id="new-project-name" placeholder="New Project Name">
+            <input type="number" id="new-project-hours" placeholder="Hours" step="0.5">
+            <button type="button" id="btn-add-project">Add</button>
+          </div>
+
+          <button type="submit" class="save-btn">Save Settings</button>
+        </form>
+      </section>
+    </main>
+  </div>
+  <script src="scripts/xlsx.full.min.js"></script>
+  <script src="scripts/utils.js"></script>
+  <script src="popup.js"></script>
+</body>
+
+</html>

@@ -15,77 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let plannedHours = {};
     let actualHours = {}; // To hold data from XLSX
 
-    // --- Helper Functions ---
-    function getWorkingDaysInMonth(year, month) {
-        // month is 0-indexed (0 = January)
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-        let workingDays = 0;
-
-        for (let day = 1; day <= daysInMonth; day++) {
-            const date = new Date(year, month, day);
-            const dayOfWeek = date.getDay();
-            // 0 = Sunday, 6 = Saturday
-            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                workingDays++;
-            }
-        }
-        return workingDays;
-    }
-
-    function getWorkingDaysElapsed(year, month) {
-        const today = new Date();
-        const currentDay = today.getDate();
-        const currentMonth = today.getMonth();
-        const currentYear = today.getFullYear();
-
-        // If not current month, return 0 or full month
-        if (year !== currentYear || month !== currentMonth) {
-            if (year < currentYear || (year === currentYear && month < currentMonth)) {
-                return getWorkingDaysInMonth(year, month); // Past month, all days elapsed
-            }
-            return 0; // Future month
-        }
-
-        let workingDays = 0;
-        for (let day = 1; day <= currentDay; day++) {
-            const date = new Date(year, month, day);
-            const dayOfWeek = date.getDay();
-            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                workingDays++;
-            }
-        }
-        return workingDays;
-    }
-
-    function calculateForecast(actual, planned) {
-        if (planned === 0) {
-            return { text: "Unplanned", class: "forecast-unplanned" };
-        }
-
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth();
-
-        const totalWorkingDays = getWorkingDaysInMonth(currentYear, currentMonth);
-        const daysElapsed = getWorkingDaysElapsed(currentYear, currentMonth);
-
-        if (daysElapsed === 0) {
-            return { text: "No data", class: "forecast-neutral" };
-        }
-
-        const dailyBurnRate = actual / daysElapsed;
-        const projectedTotal = dailyBurnRate * totalWorkingDays;
-        const difference = projectedTotal - planned;
-
-        if (Math.abs(difference) < 2) {
-            return { text: "On track", class: "forecast-neutral" };
-        } else if (difference > 0) {
-            return { text: `Over by ${formatHours(difference)}`, class: "forecast-over" };
-        } else {
-            return { text: `Under by ${formatHours(Math.abs(difference))}`, class: "forecast-under" };
-        }
-    }
-
     // --- Initialization ---
     loadSettings().then(() => {
         renderSettings();
@@ -354,6 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let totalActual = 0;
         let totalPlanned = 0;
+        let totalActualPlannedWork = 0; // New variable
         let unplannedWork = 0;
 
         if (sortedProjects.length === 0) {
@@ -376,22 +306,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 totalActual += actual;
                 totalPlanned += planned;
+                
+                // Accumulate total actual for projects that also have planned hours
+                if (actual > 0 && planned > 0) {
+                    totalActualPlannedWork += actual;
+                }
 
                 // Track unplanned work (actual hours with no planned hours)
                 if (planned === 0 && actual > 0) {
                     unplannedWork += actual;
                 }
 
-                // Calculate forecast
-                const forecast = calculateForecast(actual, planned);
+                // Prepare actual data for forecasting (needs daily breakdown)
+                // If actualHours comes from XLSX, it already has dailyHours.
+                // If from scraping, it's a simple number, so we can't do daily forecast.
+                // For now, only provide daily breakdown for XLSX sourced data.
+                const projectActualDailyHours = (currentActuals[proj] && currentActuals[proj].dailyHours) ?
+                                                currentActuals[proj].dailyHours : {};
+
+                // Calculate forecast using the new function
+                const forecast = forecastProjectStatus(projectActualDailyHours, planned);
 
                 const tr = document.createElement('tr');
+                let forecastDisplay = forecast.text;
+                if (forecast.exhaustionDate) {
+                    forecastDisplay += ` (${forecast.exhaustionDate})`;
+                }
+                
                 tr.innerHTML = `
                     <td>${proj}</td>
                     <td>${formatHours(actual)}</td>
                     <td>${formatHours(planned)}</td>
                     <td class="${diff > 0 ? 'diff-pos' : (diff < 0 ? 'diff-neg' : '')}">${diff > 0 ? '+' : ''}${formatHours(diff)}</td>
-                    <td class="${forecast.class}">${forecast.text}</td>
+                    <td class="${forecast.class}">${forecastDisplay}</td>
                 `;
                 tableBody.appendChild(tr);
             });
@@ -399,6 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('total-actual').textContent = formatHours(totalActual);
         document.getElementById('total-planned').textContent = formatHours(totalPlanned);
+        document.getElementById('total-actual-planned').textContent = formatHours(totalActualPlannedWork); // New line
         document.getElementById('unplanned-work').textContent = formatHours(unplannedWork);
 
         const totalDiff = totalActual - totalPlanned;

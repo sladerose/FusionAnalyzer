@@ -5,7 +5,9 @@
  * @param {Date} date - The date object to format.
  * @returns {string} - The date formatted as "YYYY-MM-DD".
  */
-const formatDate = (date) => date.toISOString().split('T')[0];
+function formatDate(date) {
+    return date.toISOString().split('T')[0];
+}
 
 /**
  * Checks if a given date is a business day (Monday-Friday).
@@ -99,7 +101,7 @@ function cleanProjectName(name) {
     if (nameLower.includes("btt weighbridge")) {
         return "Mobile Arivals (Weighbridge Change request)";
     }
-    
+
     let modifiedName = originalName;
     // Handle "00000001-BD-" prefix logic
     // Python: if len(name) > 7 and name[6] == '-': name = name[7:].strip()
@@ -107,7 +109,7 @@ function cleanProjectName(name) {
     if (modifiedName.length > 7 && modifiedName.charAt(6) === '-') {
         modifiedName = modifiedName.substring(7).trim();
     }
-    
+
     if (modifiedName.startsWith("ges/No_image.jpg00000001-BD- ")) {
         modifiedName = "BD- Project Stronghold";
     }
@@ -182,10 +184,10 @@ function forecastProjectStatus(projectActualDailyHours, projectPlannedTotalHours
     if (dailyRate === 0 && currentMonthActuals === 0) {
         return { text: "No data yet", class: "forecast-neutral", exhaustionDate: null };
     }
-    
+
     // If no planned hours, it's considered unplanned, not forecastable in this context
     if (projectPlannedTotalHours === 0) {
-         return { text: "Unplanned", class: "forecast-unplanned", exhaustionDate: null };
+        return { text: "Unplanned", class: "forecast-unplanned", exhaustionDate: null };
     }
 
 
@@ -239,8 +241,8 @@ function forecastProjectStatus(projectActualDailyHours, projectPlannedTotalHours
             // This case might happen if currentMonthActuals > planned, but dailyRate is 0
             // or if the exhaustion happened due to non-business days, which isn't explicitly tracked daily.
             // For simplicity, we'll just say "Over budget"
-             forecastText = `Over budget by ${formatHours(currentMonthActuals - projectPlannedTotalHours)}`;
-             forecastClass = "forecast-over";
+            forecastText = `Over budget by ${formatHours(currentMonthActuals - projectPlannedTotalHours)}`;
+            forecastClass = "forecast-over";
         }
     } else if (projectedRemainingHours > buffer) {
         forecastText = `Increase consumption by ${formatHours(projectedRemainingHours / remainingBusinessDays)} hrs/day`;
@@ -259,11 +261,11 @@ function forecastProjectStatus(projectActualDailyHours, projectPlannedTotalHours
                 tempCurrentActuals += projectActualDailyHours[dateString];
             }
         }
-        
+
         let hoursLeftToCover = projectPlannedTotalHours - tempCurrentActuals;
 
         if (dailyRate > 0) {
-            let tempDate = new Date(now); 
+            let tempDate = new Date(now);
             tempDate.setDate(tempDate.getDate() + 1); // Start checking from tomorrow
 
             while (tempDate.getMonth() === currentMonth) { // Only forecast within the current month
@@ -277,7 +279,7 @@ function forecastProjectStatus(projectActualDailyHours, projectPlannedTotalHours
                 tempDate.setDate(tempDate.getDate() + 1);
             }
         }
-        
+
         if (exhaustionDate) {
             forecastText = `Run out by ${formatExhaustionDate(exhaustionDate)}`;
         } else {
@@ -393,7 +395,7 @@ function parseXLSXData(sheetData) {
                 else if (typeof cellValue === 'string') {
                     const parts = cellValue.split(' ')[0].split('/');
                     if (parts.length === 3) {
-                       currentColDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                        currentColDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
                     }
                 }
 
@@ -418,8 +420,7 @@ function parseXLSXData(sheetData) {
             !projectNameRaw.startsWith("Date & Time Exported:") &&
             !projectNameRaw.startsWith("Staff Name:") &&
             !projectNameRaw.startsWith("Employee Number:") &&
-            !projectNameRaw.toLowerCase().startsWith("signature"))
-        {
+            !projectNameRaw.toLowerCase().startsWith("signature")) {
             const projectNameClean = cleanProjectName(projectNameRaw);
 
             // Initialize project data if not already present
@@ -466,7 +467,7 @@ function parseXLSXData(sheetData) {
  */
 function parsePlannedHoursXLSX(sheetData) {
     const plannedData = {};
-    
+
     if (!sheetData || sheetData.length < 2) {
         console.error("Sheet data is empty or too short");
         return plannedData;
@@ -498,7 +499,7 @@ function parsePlannedHoursXLSX(sheetData) {
 
     headers.forEach((header, index) => {
         if (typeof header !== 'string') return;
-        
+
         const match = header.trim().match(headerRegex);
         if (match) {
             weeklyCols.push({
@@ -532,7 +533,7 @@ function parsePlannedHoursXLSX(sheetData) {
         if (!rawProjectName || typeof rawProjectName !== 'string') continue;
 
         const projectName = cleanProjectName(rawProjectName);
-        
+
         // Initialize project entry
         if (!plannedData[projectName]) {
             plannedData[projectName] = {
@@ -553,12 +554,12 @@ function parsePlannedHoursXLSX(sheetData) {
 
             if (hours > 0) {
                 const monthIndex = getMonthIndex(col.monthStr);
-                
+
                 // Construct Date objects for start and end of the week
                 // Note: This assumes the current year.
                 const startDate = new Date(currentYear, monthIndex, col.startDay);
                 const endDate = new Date(currentYear, monthIndex, col.endDay);
-                
+
                 // Set to midday to avoid timezone edge cases when just comparing dates
                 startDate.setHours(12, 0, 0, 0);
                 endDate.setHours(12, 0, 0, 0);
@@ -587,10 +588,10 @@ function getWeekRange(date) {
     const d = new Date(date);
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
-    
+
     const start = new Date(d.setDate(diff));
     start.setHours(0, 0, 0, 0);
-    
+
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
     end.setHours(23, 59, 59, 999);
@@ -608,11 +609,11 @@ function getWeekRange(date) {
 function isDateInRange(dateStr, rangeStart, rangeEnd) {
     const d = new Date(dateStr);
     // Reset hours for accurate date-only comparison
-    d.setHours(0,0,0,0);
+    d.setHours(0, 0, 0, 0);
     const start = new Date(rangeStart);
-    start.setHours(0,0,0,0);
+    start.setHours(0, 0, 0, 0);
     const end = new Date(rangeEnd);
-    end.setHours(0,0,0,0);
-    
+    end.setHours(0, 0, 0, 0);
+
     return d >= start && d <= end;
 }

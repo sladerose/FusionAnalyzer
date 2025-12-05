@@ -455,3 +455,164 @@ function parseXLSXData(sheetData) {
 
     return projectData;
 }
+
+/**
+ * Parses the "Weekly breakdown" Planned Hours XLSX file.
+ * Expected format:
+ * Columns: Client name, Project Name, Resource, Role, [Month] Planned Hours [StartDay]-[EndDay]...
+ * Example Header: "Dec Planned Hours 1-5"
+ * @param {Array<Array<any>>} sheetData 
+ * @returns {Object} Structure: { "Project Name": { total: number, weekly: [{startDate, endDate, hours, label}] } }
+ */
+function parsePlannedHoursXLSX(sheetData) {
+    const plannedData = {};
+    
+    if (!sheetData || sheetData.length < 2) {
+        console.error("Sheet data is empty or too short");
+        return plannedData;
+    }
+
+    // 1. Find the header row
+    // We assume the header is the first row that contains "Project Name"
+    let headerRowIndex = -1;
+    for (let i = 0; i < sheetData.length; i++) {
+        const row = sheetData[i];
+        if (row && row.includes("Project Name")) {
+            headerRowIndex = i;
+            break;
+        }
+    }
+
+    if (headerRowIndex === -1) {
+        console.error("Could not find 'Project Name' header in Planned Hours file.");
+        return plannedData;
+    }
+
+    const headers = sheetData[headerRowIndex];
+    const weeklyCols = []; // Stores metadata about weekly columns: { index, monthStr, startDay, endDay }
+
+    // 2. Parse Headers to identify weekly columns
+    // Regex to match "Dec Planned Hours 1-5" or similar
+    // Matches: (Month Name) Planned Hours (StartDay)-(EndDay)
+    const headerRegex = /^([A-Za-z]+)\s+Planned\s+Hours\s+(\d+)-(\d+)$/i;
+
+    headers.forEach((header, index) => {
+        if (typeof header !== 'string') return;
+        
+        const match = header.trim().match(headerRegex);
+        if (match) {
+            weeklyCols.push({
+                index: index,
+                monthStr: match[1],
+                startDay: parseInt(match[2], 10),
+                endDay: parseInt(match[3], 10),
+                originalHeader: header.trim()
+            });
+        }
+    });
+
+    // Helper to convert Month String to Index (0-11)
+    const getMonthIndex = (monthStr) => {
+        const d = new Date(`${monthStr} 1, 2000`);
+        return d.getMonth();
+    };
+
+    const currentYear = new Date().getFullYear();
+
+    // 3. Iterate through data rows
+    for (let i = headerRowIndex + 1; i < sheetData.length; i++) {
+        const row = sheetData[i];
+        if (!row || row.length === 0) continue;
+
+        // Find Project Name column index
+        const projectNameIndex = headers.indexOf("Project Name");
+        if (projectNameIndex === -1) continue;
+
+        const rawProjectName = row[projectNameIndex];
+        if (!rawProjectName || typeof rawProjectName !== 'string') continue;
+
+        const projectName = cleanProjectName(rawProjectName);
+        
+        // Initialize project entry
+        if (!plannedData[projectName]) {
+            plannedData[projectName] = {
+                total: 0,
+                weekly: []
+            };
+        }
+
+        // 4. Extract weekly hours
+        weeklyCols.forEach(col => {
+            const hoursVal = row[col.index];
+            let hours = 0;
+            if (typeof hoursVal === 'number') {
+                hours = hoursVal;
+            } else if (typeof hoursVal === 'string' && !isNaN(parseFloat(hoursVal))) {
+                hours = parseFloat(hoursVal);
+            }
+
+            if (hours > 0) {
+                const monthIndex = getMonthIndex(col.monthStr);
+                
+                // Construct Date objects for start and end of the week
+                // Note: This assumes the current year.
+                const startDate = new Date(currentYear, monthIndex, col.startDay);
+                const endDate = new Date(currentYear, monthIndex, col.endDay);
+                
+                // Set to midday to avoid timezone edge cases when just comparing dates
+                startDate.setHours(12, 0, 0, 0);
+                endDate.setHours(12, 0, 0, 0);
+
+                plannedData[projectName].weekly.push({
+                    label: col.originalHeader,
+                    startDate: formatDate(startDate),
+                    endDate: formatDate(endDate),
+                    hours: hours
+                });
+
+                plannedData[projectName].total += hours;
+            }
+        });
+    }
+
+    return plannedData;
+}
+
+/**
+ * Gets the start and end dates of the current week (Monday to Sunday).
+ * @param {Date} date 
+ * @returns {{start: Date, end: Date}}
+ */
+function getWeekRange(date) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    
+    const start = new Date(d.setDate(diff));
+    start.setHours(0, 0, 0, 0);
+    
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    return { start, end };
+}
+
+/**
+ * Checks if a date string (YYYY-MM-DD) falls within a date range.
+ * @param {string} dateStr 
+ * @param {Date} rangeStart 
+ * @param {Date} rangeEnd 
+ * @returns {boolean}
+ */
+function isDateInRange(dateStr, rangeStart, rangeEnd) {
+    const d = new Date(dateStr);
+    // Reset hours for accurate date-only comparison
+    d.setHours(0,0,0,0);
+    const start = new Date(rangeStart);
+    start.setHours(0,0,0,0);
+    const end = new Date(rangeEnd);
+    end.setHours(0,0,0,0);
+    
+    return d >= start && d <= end;
+}

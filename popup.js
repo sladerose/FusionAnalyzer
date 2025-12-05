@@ -10,10 +10,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnAddProject = document.getElementById('btn-add-project');
     const btnRefresh = document.getElementById('btn-refresh');
     const btnDebug = document.getElementById('btn-debug');
+    const viewModeToggle = document.getElementById('view-mode-toggle');
 
     // State
     let plannedHours = {};
     let actualHours = {}; // To hold data from XLSX
+    let currentViewMode = 'monthly';
 
     // --- Initialization ---
     loadSettings().then(() => {
@@ -31,6 +33,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     tabSettings.addEventListener('click', () => switchTab('settings'));
 
+    if (viewModeToggle) {
+        viewModeToggle.addEventListener('change', (e) => {
+            currentViewMode = e.target.value;
+            renderTable(actualHours);
+        });
+    }
+
     function switchTab(tabName) {
         if (tabName === 'dashboard') {
             tabDashboard.classList.add('active');
@@ -45,14 +54,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Add Project Logic ---
+    const newProjectMode = document.getElementById('new-project-mode');
+    const newProjectHours = document.getElementById('new-project-hours');
+
+    if (newProjectMode && newProjectHours) {
+        newProjectMode.addEventListener('change', (e) => {
+            if (e.target.value === 'weekly') {
+                newProjectHours.value = '';
+                newProjectHours.disabled = true;
+                newProjectHours.placeholder = 'N/A';
+                newProjectHours.style.backgroundColor = '#f1f5f9';
+            } else {
+                newProjectHours.disabled = false;
+                newProjectHours.placeholder = 'Hours';
+                newProjectHours.style.backgroundColor = '';
+            }
+        });
+    }
+
     btnAddProject.addEventListener('click', () => {
         const name = document.getElementById('new-project-name').value.trim();
-        const hours = parseFloat(document.getElementById('new-project-hours').value);
+        const mode = document.getElementById('new-project-mode').value;
+        let hours = 0;
 
-        if (name && !isNaN(hours)) {
-            plannedHours[name] = hours;
+        if (mode === 'monthly') {
+            hours = parseFloat(document.getElementById('new-project-hours').value);
+        }
+
+        if (name) {
+            if (mode === 'monthly' && isNaN(hours)) {
+                alert("Please enter valid hours for Monthly mode.");
+                return;
+            }
+
+            plannedHours[name] = {
+                type: mode,
+                total: mode === 'monthly' ? hours : 0,
+                weeks: []
+            };
+
             document.getElementById('new-project-name').value = '';
             document.getElementById('new-project-hours').value = '';
+            // Reset mode to monthly
+            if (newProjectMode) {
+                newProjectMode.value = 'monthly';
+                newProjectMode.dispatchEvent(new Event('change'));
+            }
+
             renderSettings();
             saveSettings();
         }
@@ -97,70 +146,87 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // XLSX Upload Handling
+    // --- XLSX Upload Handling (Actuals) ---
     const btnUpload = document.getElementById('btn-upload-xlsx');
     const fileInput = document.getElementById('xlsx-upload');
     const uploadStatus = document.getElementById('upload-status');
 
-    btnUpload.addEventListener('click', () => {
-        fileInput.click();
-    });
+    if (btnUpload) {
+        btnUpload.addEventListener('click', () => {
+            fileInput.click();
+        });
+    }
 
-    fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
 
-        uploadStatus.textContent = 'Reading file...';
+            uploadStatus.textContent = 'Reading file...';
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const data = new Uint8Array(event.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
 
-                const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-                const parsedData = parseXLSXData(jsonData);
+                    const parsedData = parseXLSXData(jsonData);
 
-                // Store in state and chrome.storage
-                actualHours = parsedData;
-                chrome.storage.local.set({ actualHours: actualHours }, () => {
-                    const projectCount = Object.keys(actualHours).filter(key => key !== 'meta').length;
-                    const timestamp = new Date().toLocaleString();
-                    uploadStatus.textContent = `✓ Uploaded ${projectCount} projects at ${timestamp}`;
-                    uploadStatus.style.color = '#28a745';
+                    // Store in state and chrome.storage
+                    actualHours = parsedData;
+                    chrome.storage.local.set({ actualHours: actualHours }, () => {
+                        const projectCount = Object.keys(actualHours).filter(key => key !== 'meta').length;
+                        const timestamp = new Date().toLocaleString();
+                        uploadStatus.textContent = `✓ Uploaded ${projectCount} projects at ${timestamp}`;
+                        uploadStatus.style.color = '#28a745';
 
-                    // Render the table with the data we just parsed
-                    renderTable(actualHours);
-                    // Switch to dashboard view to show the result
-                    switchTab('dashboard');
-                });
-            } catch (error) {
-                console.error('Error parsing XLSX:', error);
-                uploadStatus.textContent = '✗ Error parsing file. Please try again.';
+                        // Render the table with the data we just parsed
+                        renderTable(actualHours);
+                        // Switch to dashboard view to show the result
+                        switchTab('dashboard');
+                    });
+                } catch (error) {
+                    console.error('Error parsing XLSX:', error);
+                    uploadStatus.textContent = '✗ Error parsing file. Please try again.';
+                    uploadStatus.style.color = '#dc3545';
+                }
+            };
+
+            reader.onerror = () => {
+                uploadStatus.textContent = '✗ Error reading file.';
                 uploadStatus.style.color = '#dc3545';
-            }
-        };
+            };
 
-        reader.onerror = () => {
-            uploadStatus.textContent = '✗ Error reading file.';
-            uploadStatus.style.color = '#dc3545';
-        };
-
-        reader.readAsArrayBuffer(file);
-    }); // Closing for fileInput.addEventListener
+            reader.readAsArrayBuffer(file);
+        });
+    }
 
     function loadSettings() {
         return new Promise((resolve) => {
             chrome.storage.local.get(['plannedHours', 'actualHours'], (result) => {
                 if (result.plannedHours) {
-                    plannedHours = result.plannedHours;
+                    // Migration Logic: Convert old number format to new object format
+                    const migrated = {};
+                    for (const [key, value] of Object.entries(result.plannedHours)) {
+                        if (typeof value === 'number') {
+                            migrated[key] = {
+                                type: 'monthly',
+                                total: value,
+                                weeks: []
+                            };
+                        } else {
+                            migrated[key] = value;
+                        }
+                    }
+                    plannedHours = migrated;
                 } else {
                     // Default / Example data
                     plannedHours = {
-                        "Example Project": 40
+                        "Example Project": { type: 'monthly', total: 40, weeks: [] }
                     };
                 }
                 if (result.actualHours) {
@@ -182,44 +248,237 @@ document.addEventListener('DOMContentLoaded', () => {
         const sortedProjects = Object.keys(plannedHours).sort();
 
         sortedProjects.forEach(proj => {
-            const div = document.createElement('div');
-            div.className = 'project-item';
+            const projectData = plannedHours[proj];
 
-            // Create Input for Name
+            const container = document.createElement('div');
+            container.className = 'project-container';
+            container.style.border = '1px solid #e2e8f0';
+            container.style.borderRadius = '6px';
+            container.style.marginBottom = '10px';
+            container.style.padding = '10px';
+            container.style.background = '#fff';
+
+            // --- Header Row ---
+            const headerRow = document.createElement('div');
+            headerRow.style.display = 'flex';
+            headerRow.style.alignItems = 'center';
+            headerRow.style.gap = '10px';
+            headerRow.style.marginBottom = '8px';
+
+            // Name Input (Read-onlyish)
             const nameInput = document.createElement('input');
             nameInput.type = 'text';
             nameInput.value = proj;
             nameInput.readOnly = true;
+            nameInput.style.flex = '1';
+            nameInput.style.fontWeight = '500';
+            nameInput.style.border = 'none';
+            nameInput.style.background = 'transparent';
 
-            // Create Input for Hours
-            const hoursInput = document.createElement('input');
-            hoursInput.type = 'number';
-            hoursInput.value = plannedHours[proj];
-            hoursInput.step = '0.5';
-            hoursInput.addEventListener('change', (e) => {
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val)) {
-                    plannedHours[proj] = val;
-                    saveSettings();
+            // Mode Toggle
+            const modeSelect = document.createElement('select');
+            modeSelect.style.padding = '4px';
+            modeSelect.style.fontSize = '12px';
+            modeSelect.style.borderRadius = '4px';
+            modeSelect.style.border = '1px solid #ccc';
+
+            const optMonthly = document.createElement('option');
+            optMonthly.value = 'monthly';
+            optMonthly.text = 'Monthly';
+            const optWeekly = document.createElement('option');
+            optWeekly.value = 'weekly';
+            optWeekly.text = 'Weekly';
+
+            modeSelect.add(optMonthly);
+            modeSelect.add(optWeekly);
+            modeSelect.value = projectData.type || 'monthly';
+
+            modeSelect.addEventListener('change', (e) => {
+                projectData.type = e.target.value;
+                if (projectData.type === 'monthly') {
+                    // If switching back to monthly, maybe keep total as is?
+                } else {
+                    // Switching to weekly, total becomes sum of weeks (initially 0 if no weeks)
+                    recalculateTotal(proj);
                 }
-            });
-
-            // Create Remove Button
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'remove-btn';
-            removeBtn.textContent = '×';
-            removeBtn.addEventListener('click', () => {
-                delete plannedHours[proj];
                 renderSettings();
                 saveSettings();
             });
 
-            div.appendChild(nameInput);
-            div.appendChild(hoursInput);
-            div.appendChild(removeBtn);
-            projectsList.appendChild(div);
+            // Hours Input (Visible if Monthly)
+            const hoursInput = document.createElement('input');
+            hoursInput.type = 'number';
+            hoursInput.step = '0.5';
+            hoursInput.style.width = '70px';
+            hoursInput.style.padding = '4px';
+            hoursInput.style.border = '1px solid #ccc';
+            hoursInput.style.borderRadius = '4px';
+
+            if (projectData.type === 'monthly') {
+                hoursInput.value = projectData.total;
+                hoursInput.addEventListener('change', (e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) {
+                        projectData.total = val;
+                        saveSettings();
+                    }
+                });
+            } else {
+                hoursInput.value = projectData.total;
+                hoursInput.readOnly = true;
+                hoursInput.style.background = '#f1f5f9';
+                hoursInput.title = "Calculated from weeks";
+            }
+
+            // Remove Button
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = '×';
+            removeBtn.style.background = 'none';
+            removeBtn.style.border = 'none';
+            removeBtn.style.color = '#94a3b8';
+            removeBtn.style.fontSize = '18px';
+            removeBtn.style.cursor = 'pointer';
+            removeBtn.addEventListener('click', () => {
+                if (confirm(`Remove project "${proj}"?`)) {
+                    delete plannedHours[proj];
+                    renderSettings();
+                    saveSettings();
+                }
+            });
+
+            headerRow.appendChild(nameInput);
+            headerRow.appendChild(modeSelect);
+            headerRow.appendChild(hoursInput);
+            headerRow.appendChild(removeBtn);
+            container.appendChild(headerRow);
+
+            // --- Weekly Editor (Visible if Weekly) ---
+            if (projectData.type === 'weekly') {
+                const weeklyEditor = document.createElement('div');
+                weeklyEditor.style.marginTop = '8px';
+                weeklyEditor.style.paddingTop = '8px';
+                weeklyEditor.style.borderTop = '1px solid #f1f5f9';
+
+                // List existing weeks
+                if (projectData.weeks && projectData.weeks.length > 0) {
+                    projectData.weeks.forEach((week, index) => {
+                        const weekRow = document.createElement('div');
+                        weekRow.style.display = 'flex';
+                        weekRow.style.alignItems = 'center';
+                        weekRow.style.gap = '5px';
+                        weekRow.style.marginBottom = '4px';
+                        weekRow.style.fontSize = '12px';
+
+                        const dateRange = document.createElement('span');
+                        dateRange.textContent = `${week.start} to ${week.end}`;
+                        dateRange.style.flex = '1';
+
+                        const weekHours = document.createElement('span');
+                        weekHours.textContent = `${week.hours}h`;
+                        weekHours.style.fontWeight = '600';
+
+                        const delWeekBtn = document.createElement('button');
+                        delWeekBtn.textContent = '×';
+                        delWeekBtn.style.border = 'none';
+                        delWeekBtn.style.background = 'none';
+                        delWeekBtn.style.color = '#ef4444';
+                        delWeekBtn.style.cursor = 'pointer';
+                        delWeekBtn.addEventListener('click', () => {
+                            projectData.weeks.splice(index, 1);
+                            recalculateTotal(proj);
+                            renderSettings();
+                            saveSettings();
+                        });
+
+                        weekRow.appendChild(dateRange);
+                        weekRow.appendChild(weekHours);
+                        weekRow.appendChild(delWeekBtn);
+                        weeklyEditor.appendChild(weekRow);
+                    });
+                } else {
+                    const emptyMsg = document.createElement('div');
+                    emptyMsg.textContent = "No weeks added yet.";
+                    emptyMsg.style.fontSize = '12px';
+                    emptyMsg.style.color = '#94a3b8';
+                    emptyMsg.style.fontStyle = 'italic';
+                    emptyMsg.style.marginBottom = '8px';
+                    weeklyEditor.appendChild(emptyMsg);
+                }
+
+                // Add New Week Form
+                const addRow = document.createElement('div');
+                addRow.style.display = 'flex';
+                addRow.style.gap = '5px';
+                addRow.style.marginTop = '8px';
+
+                const startInput = document.createElement('input');
+                startInput.type = 'date';
+                startInput.style.width = '110px'; // wider for date
+                startInput.style.fontSize = '11px';
+
+                const endInput = document.createElement('input');
+                endInput.type = 'date';
+                endInput.style.width = '110px';
+                endInput.style.fontSize = '11px';
+
+                const wHoursInput = document.createElement('input');
+                wHoursInput.type = 'number';
+                wHoursInput.placeholder = 'Hrs';
+                wHoursInput.step = '0.5';
+                wHoursInput.style.width = '50px';
+                wHoursInput.style.fontSize = '12px';
+
+                const addWeekBtn = document.createElement('button');
+                addWeekBtn.textContent = '+';
+                addWeekBtn.style.padding = '2px 8px';
+                addWeekBtn.style.background = '#2563eb';
+                addWeekBtn.style.color = 'white';
+                addWeekBtn.style.border = 'none';
+                addWeekBtn.style.borderRadius = '4px';
+                addWeekBtn.style.cursor = 'pointer';
+
+                addWeekBtn.addEventListener('click', () => {
+                    const s = startInput.value;
+                    const e = endInput.value;
+                    const h = parseFloat(wHoursInput.value);
+
+                    if (s && e && !isNaN(h)) {
+                        if (!projectData.weeks) projectData.weeks = [];
+                        projectData.weeks.push({
+                            start: s,
+                            end: e,
+                            hours: h
+                        });
+                        // Sort weeks by start date
+                        projectData.weeks.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+                        recalculateTotal(proj);
+                        renderSettings();
+                        saveSettings();
+                    } else {
+                        alert("Please fill in Start Date, End Date, and Hours.");
+                    }
+                });
+
+                addRow.appendChild(startInput);
+                addRow.appendChild(endInput);
+                addRow.appendChild(wHoursInput);
+                addRow.appendChild(addWeekBtn);
+                weeklyEditor.appendChild(addRow);
+
+                container.appendChild(weeklyEditor);
+            }
+
+            projectsList.appendChild(container);
         });
+    }
+
+    function recalculateTotal(projName) {
+        const data = plannedHours[projName];
+        if (data.type === 'weekly' && data.weeks) {
+            const sum = data.weeks.reduce((acc, curr) => acc + (curr.hours || 0), 0);
+            data.total = sum;
+        }
     }
 
     function refreshDashboard() {
@@ -255,9 +514,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     if (response && response.success) {
-                        // Note: Scraped data would be a simple projectName -> totalHours map.
-                        // We might need to adapt renderTable or store this differently later if we want
-                        // a consistent actualHours structure for scraped vs. XLSX data.
                         actualHours = response.data; // Cache scraped data
                         renderTable(actualHours);
                     } else if (response && response.error === "WRONG_PAGE_DASHBOARD") {
@@ -273,6 +529,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderTable(currentActuals) {
         tableBody.innerHTML = '';
 
+        // Determine timeframe
+        const isWeekly = currentViewMode === 'weekly';
+        const today = new Date();
+        const { start: weekStart, end: weekEnd } = getWeekRange(today);
+
         // Merge keys
         const allProjects = new Set([
             ...Object.keys(plannedHours),
@@ -283,56 +544,107 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let totalActual = 0;
         let totalPlanned = 0;
-        let totalActualPlannedWork = 0; // New variable
+        let totalActualPlannedWork = 0;
         let unplannedWork = 0;
 
         if (sortedProjects.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #666;">No data to display. Upload an XLSX file or refresh on a Fusion page.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #666;">No data to display. Add projects in Settings or refresh on a Fusion page.</td></tr>';
         } else {
             sortedProjects.forEach(proj => {
-                // Handle both scraped data (simple numbers) and XLSX data (objects with total/totalHours)
                 let actual = 0;
+                let planned = 0;
+                let forecast = { text: "N/A", class: "forecast-neutral" };
+
+                // --- 1. Calculate Actuals ---
                 if (currentActuals && currentActuals[proj]) {
-                    if (typeof currentActuals[proj] === 'number') {
-                        actual = currentActuals[proj]; // Scraped data
-                    } else if (currentActuals[proj].total !== undefined) {
-                        actual = currentActuals[proj].total; // New XLSX structure
-                    } else if (currentActuals[proj].totalHours !== undefined) {
-                        actual = currentActuals[proj].totalHours; // Old XLSX structure
+                    if (isWeekly) {
+                        // Calculate actuals for the current week only
+                        if (currentActuals[proj].dailyHours) {
+                            for (const dateStr in currentActuals[proj].dailyHours) {
+                                if (isDateInRange(dateStr, weekStart, weekEnd)) {
+                                    actual += currentActuals[proj].dailyHours[dateStr];
+                                }
+                            }
+                        } else {
+                            // If we only have total scraped data (no daily breakdown), we can't show weekly actuals accurately
+                            actual = 0;
+                        }
+                    } else {
+                        // Monthly / Total
+                        if (typeof currentActuals[proj] === 'number') {
+                            actual = currentActuals[proj];
+                        } else if (currentActuals[proj].total !== undefined) {
+                            actual = currentActuals[proj].total;
+                        } else if (currentActuals[proj].totalHours !== undefined) {
+                            actual = currentActuals[proj].totalHours;
+                        }
                     }
                 }
-                const planned = plannedHours[proj] || 0;
+
+                // --- 2. Calculate Planned ---
+                const plannedData = plannedHours[proj];
+                if (plannedData) {
+                    if (isWeekly) {
+                        // Find planned hours for the current week
+                        if (plannedData.type === 'weekly' && plannedData.weeks) {
+                            // Find the week entry that overlaps with current week
+                            const weekEntry = plannedData.weeks.find(w => {
+                                // Check if today is within the range [w.start, w.end]
+                                return isDateInRange(formatDate(today), new Date(w.start), new Date(w.end));
+                            });
+
+                            if (weekEntry) {
+                                planned = weekEntry.hours;
+                            } else {
+                                planned = 0;
+                            }
+                        } else {
+                            // Monthly mode project in Weekly View:
+                            // We don't have a breakdown. Show 0? Or pro-rate?
+                            // Let's show 0 and maybe a tooltip or just 0.
+                            planned = 0;
+                        }
+                    } else {
+                        // Monthly View
+                        planned = plannedData.total || 0;
+                    }
+                }
+
                 const diff = actual - planned;
 
                 totalActual += actual;
                 totalPlanned += planned;
-                
-                // Accumulate total actual for projects that also have planned hours
+
                 if (actual > 0 && planned > 0) {
                     totalActualPlannedWork += actual;
                 }
 
-                // Track unplanned work (actual hours with no planned hours)
                 if (planned === 0 && actual > 0) {
                     unplannedWork += actual;
                 }
 
-                // Prepare actual data for forecasting (needs daily breakdown)
-                // If actualHours comes from XLSX, it already has dailyHours.
-                // If from scraping, it's a simple number, so we can't do daily forecast.
-                // For now, only provide daily breakdown for XLSX sourced data.
-                const projectActualDailyHours = (currentActuals[proj] && currentActuals[proj].dailyHours) ?
-                                                currentActuals[proj].dailyHours : {};
-
-                // Calculate forecast using the new function
-                const forecast = forecastProjectStatus(projectActualDailyHours, planned);
+                // Forecast logic (Only for Monthly view for now)
+                if (!isWeekly) {
+                    const projectActualDailyHours = (currentActuals[proj] && currentActuals[proj].dailyHours) ?
+                        currentActuals[proj].dailyHours : {};
+                    forecast = forecastProjectStatus(projectActualDailyHours, planned);
+                } else {
+                    // Weekly forecast
+                    if (actual > planned) {
+                        forecast = { text: "Over weekly limit", class: "forecast-over" };
+                    } else if (actual < planned) {
+                        forecast = { text: "Under weekly limit", class: "forecast-under" };
+                    } else {
+                        forecast = { text: "On track", class: "forecast-neutral" };
+                    }
+                }
 
                 const tr = document.createElement('tr');
                 let forecastDisplay = forecast.text;
                 if (forecast.exhaustionDate) {
                     forecastDisplay += ` (${forecast.exhaustionDate})`;
                 }
-                
+
                 tr.innerHTML = `
                     <td>${proj}</td>
                     <td>${formatHours(actual)}</td>
@@ -352,7 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
         totalActualPlannedEl.textContent = formatHours(totalActualPlannedWork);
         let actualPlannedClass = '';
         const plannedPerformanceDiff = totalActualPlannedWork - totalPlanned;
-        const amberBuffer = 5; // Define buffer for amber zone
+        const amberBuffer = isWeekly ? 2 : 5; // Smaller buffer for weekly view
 
         if (plannedPerformanceDiff >= 0) {
             actualPlannedClass = 'actual-planned-green'; // Ahead or on par

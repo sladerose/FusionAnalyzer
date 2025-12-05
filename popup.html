@@ -21,6 +21,16 @@
     <main>
       <!-- Dashboard Tab -->
       <section id="view-dashboard" class="tab-content active">
+        <div class="view-controls"
+          style="margin-bottom: 15px; display: flex; justify-content: flex-end; align-items: center;">
+          <label for="view-mode-toggle" style="margin-right: 10px; font-weight: bold; font-size: 14px;">View
+            Mode:</label>
+          <select id="view-mode-toggle" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
+            <option value="monthly">Monthly Overview</option>
+            <option value="weekly">Current Week</option>
+          </select>
+        </div>
+
         <div class="summary-card">
           <div class="stat">
             <span class="label">Total Actual</span>
@@ -103,6 +113,10 @@
 
           <div class="add-project">
             <input type="text" id="new-project-name" placeholder="New Project Name">
+            <select id="new-project-mode" style="padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+              <option value="monthly">Monthly</option>
+              <option value="weekly">Weekly</option>
+            </select>
             <input type="number" id="new-project-hours" placeholder="Hours" step="0.5">
             <button type="button" id="btn-add-project">Add</button>
           </div>

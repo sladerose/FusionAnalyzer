@@ -19,16 +19,17 @@
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   width: 550px;
-  height: 500px;
+  min-height: 200px; /* Allow growing, prevent collapsing too small */
+  /* Remove fixed height: 500px */
   background-color: var(--bg);
   color: var(--text);
-  overflow: hidden;
+  /* Remove overflow: hidden to allow expansion */
 }
 
 .container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Remove height: 100% to allow container to determine its own height */
 }
 
 header {
@@ -67,7 +68,7 @@ h1 {
 
 main {
   flex: 1;
-  overflow-y: auto;
+  /* Remove overflow-y: auto to prevent internal scrollbar */
   padding: 16px;
 }
 

@@ -498,30 +498,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            chrome.scripting.executeScript({
-                target: { tabId: activeTab.id },
-                files: ['scripts/utils.js', 'scripts/content.js']
-            }, () => {
-                if (chrome.runtime.lastError) {
-                    renderTable({}); // Clear table on injection error
-                    return;
+            // Function to handle the response from the content script
+            const handleResponse = (response) => {
+                if (response && response.success) {
+                    actualHours = response.data; // Cache scraped data
+                    renderTable(actualHours);
+                } else if (response && response.error === "WRONG_PAGE_DASHBOARD") {
+                    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #d9534f; padding: 20px;"><b>Wrong Page Detected</b><br>You are on the Dashboard.<br>Please navigate to the <b>Daily Timesheet</b> page and click Refresh.</td></tr>';
+                } else {
+                    renderTable({});
                 }
+            };
 
-                chrome.tabs.sendMessage(activeTab.id, { action: "scrape_hours" }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        renderTable({}); // Clear table if message fails
-                        return;
-                    }
+            // Attempt to send message FIRST
+            chrome.tabs.sendMessage(activeTab.id, { action: "scrape_hours" }, (response) => {
+                if (chrome.runtime.lastError) {
+                    // Message failed, likely because script isn't injected. Inject now.
+                    console.log("Content script not responding. Injecting scripts...", chrome.runtime.lastError.message);
 
-                    if (response && response.success) {
-                        actualHours = response.data; // Cache scraped data
-                        renderTable(actualHours);
-                    } else if (response && response.error === "WRONG_PAGE_DASHBOARD") {
-                        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #d9534f; padding: 20px;"><b>Wrong Page Detected</b><br>You are on the Dashboard.<br>Please navigate to the <b>Daily Timesheet</b> page and click Refresh.</td></tr>';
-                    } else {
-                        renderTable({});
-                    }
-                });
+                    chrome.scripting.executeScript({
+                        target: { tabId: activeTab.id },
+                        files: ['scripts/utils.js', 'scripts/content.js']
+                    }, () => {
+                        if (chrome.runtime.lastError) {
+                            console.error("Script injection failed:", chrome.runtime.lastError);
+                            renderTable({});
+                            return;
+                        }
+
+                        // Retry sending message after successful injection
+                        chrome.tabs.sendMessage(activeTab.id, { action: "scrape_hours" }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.error("Message failed after injection:", chrome.runtime.lastError);
+                                renderTable({});
+                            } else {
+                                handleResponse(response);
+                            }
+                        });
+                    });
+                } else {
+                    // Message succeeded, script was already there
+                    console.log("Content script responded immediately.");
+                    handleResponse(response);
+                }
             });
         });
     }

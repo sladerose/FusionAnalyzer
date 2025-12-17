@@ -5,9 +5,7 @@
  * @param {Date} date - The date object to format.
  * @returns {string} - The date formatted as "YYYY-MM-DD".
  */
-function formatDate(date) {
-    return date.toISOString().split('T')[0];
-}
+var formatDate = (date) => date.toISOString().split('T')[0];
 
 /**
  * Checks if a given date is a business day (Monday-Friday).

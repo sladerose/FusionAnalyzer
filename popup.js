@@ -498,6 +498,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Check for restricted URLs (chrome://, edge://, about:, etc.)
+            // We can check activeTab.url if we have permissions, but activeTab permission
+            // only grants access after user interaction. Since user clicked popup, we likely have it.
+            const url = activeTab.url || "";
+            if (url.startsWith("chrome://") || url.startsWith("edge://") || url.startsWith("about:") || url.startsWith("mozilla:") || url.startsWith("view-source:")) {
+                console.log(`Fusion Analyzer: Skipping scrape on restricted URL: ${url}`);
+                renderTable({});
+                return;
+            }
+
             // Function to handle the response from the content script
             const handleResponse = (response) => {
                 if (response && response.success) {
@@ -522,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }, () => {
                         if (chrome.runtime.lastError) {
                             const errorMsg = chrome.runtime.lastError.message;
-                            console.error("Script injection failed (likely unrestricted page):", errorMsg);
+                            console.warn("Fusion Analyzer: Could not scrape page (restricted or not loaded). Showing planned hours only.", errorMsg);
                             // Fallback: Render with no actuals so user can still see planned hours
                             renderTable({});
                             return;

@@ -131,8 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 func: () => document.body.innerHTML
             }, (results) => {
                 if (chrome.runtime.lastError) {
-                    console.error(chrome.runtime.lastError);
-                    alert("Error: Cannot access page. Make sure you are on the Fusion website.");
+                    console.error("Debug script failed:", chrome.runtime.lastError.message);
+                    alert("Error: Cannot access page. Make sure you are on the Fusion website.\n\nDetails: " + chrome.runtime.lastError.message);
                     return;
                 }
 
@@ -521,7 +521,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         files: ['scripts/utils.js', 'scripts/content.js']
                     }, () => {
                         if (chrome.runtime.lastError) {
-                            console.error("Script injection failed:", chrome.runtime.lastError);
+                            const errorMsg = chrome.runtime.lastError.message;
+                            console.error("Script injection failed (likely unrestricted page):", errorMsg);
+                            // Fallback: Render with no actuals so user can still see planned hours
                             renderTable({});
                             return;
                         }
@@ -638,8 +640,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     totalActualPlannedWork += actual;
                 }
 
-                if (planned === 0 && actual > 0) {
-                    unplannedWork += actual;
+                if (actual > planned) {
+                    unplannedWork += (actual - planned);
                 }
 
                 // Forecast logic (Only for Monthly view for now)

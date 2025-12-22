@@ -37,7 +37,14 @@ To distribute this extension to colleagues for local testing or use:
 
 3.  **Analyze Timesheet**:
     *   Click the extension icon.
-    *   The **Dashboard** tab will instantly show your Actual vs. Planned hours, using the planned hours you previously saved and the actual hours from your uploaded XLSX file.
+    *   The **Dashboard** tab will instantly show your Actual vs. Planned hours.
+    *   **Unplanned Work**: This calculation now includes:
+        *   Any work done on projects *not* in your planned list.
+        *   Any *excess* hours worked on planned projects (e.g., if you planned 4 hours but worked 6, those extra 2 hours count as unplanned).
+
+## Version 1.1 Updates
+- **Unplanned Work Logic**: Updated to capture overage hours on planned projects.
+- **Improved Use Anywhere**: The extension popup now works on any tab (including `chrome://` pages), allowing you to view and edit your Planned Hours even if the current page cannot be scraped.
 
 ## Troubleshooting
 

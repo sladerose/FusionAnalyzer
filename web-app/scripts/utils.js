@@ -436,7 +436,7 @@ function parseXLSXData(sheetData) {
                 }
 
                 try {
-                    const hours = parseFloat(hoursVal);
+                    const hours = parseFloat(hours);
                     if (hours > 0) {
                         const dateString = formatDate(currentWeekDateCols[c_idx]);
                         // Add daily hours

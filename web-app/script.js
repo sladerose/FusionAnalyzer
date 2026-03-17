@@ -115,36 +115,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     btnRefresh.addEventListener('click', () => {
-        // Clear stored actuals from XLSX before scraping anew
+        // Clear stored actuals from XLSX
         actualHours = {};
-        chrome.storage.local.remove('actualHours', refreshDashboard);
+        localStorage.removeItem('actualHours'); // Use localStorage
+        refreshDashboard();
     });
 
-    btnDebug.addEventListener('click', () => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            const activeTab = tabs[0];
-            if (!activeTab) return;
 
-            // Use executeScript to get HTML directly, avoiding message passing issues
-            chrome.scripting.executeScript({
-                target: { tabId: activeTab.id },
-                func: () => document.body.innerHTML
-            }, (results) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Debug script failed:", chrome.runtime.lastError.message);
-                    alert("Error: Cannot access page. Make sure you are on the Fusion website.\n\nDetails: " + chrome.runtime.lastError.message);
-                    return;
-                }
-
-                if (results && results[0] && results[0].result) {
-                    const html = results[0].result;
-                    navigator.clipboard.writeText(html).then(() => {
-                        alert("Page HTML copied to clipboard! Please paste this to the developer.");
-                    });
-                }
-            });
-        });
-    });
 
     // --- XLSX Upload Handling (Actuals) ---
     const btnUpload = document.getElementById('btn-upload-xlsx');
@@ -176,9 +153,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const parsedData = parseXLSXData(jsonData);
 
-                    // Store in state and chrome.storage
+                    // Store in state and local storage
                     actualHours = parsedData;
-                    chrome.storage.local.set({ actualHours: actualHours }, () => {
+                    localStorage.setItem('actualHours', JSON.stringify(actualHours));
                         const projectCount = Object.keys(actualHours).filter(key => key !== 'meta').length;
                         const timestamp = new Date().toLocaleString();
                         uploadStatus.textContent = `✓ Uploaded ${projectCount} projects at ${timestamp}`;
@@ -207,40 +184,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadSettings() {
         return new Promise((resolve) => {
-            chrome.storage.local.get(['plannedHours', 'actualHours'], (result) => {
-                if (result.plannedHours) {
-                    // Migration Logic: Convert old number format to new object format
-                    const migrated = {};
-                    for (const [key, value] of Object.entries(result.plannedHours)) {
-                        if (typeof value === 'number') {
-                            migrated[key] = {
-                                type: 'monthly',
-                                total: value,
-                                weeks: []
-                            };
-                        } else {
-                            migrated[key] = value;
-                        }
+            const storedPlannedHours = localStorage.getItem('plannedHours');
+            const storedActualHours = localStorage.getItem('actualHours');
+
+            if (storedPlannedHours) {
+                // Migration Logic: Convert old number format to new object format
+                const parsedPlannedHours = JSON.parse(storedPlannedHours);
+                const migrated = {};
+                for (const [key, value] of Object.entries(parsedPlannedHours)) {
+                    if (typeof value === 'number') {
+                        migrated[key] = {
+                            type: 'monthly',
+                            total: value,
+                            weeks: []
+                        };
+                    } else {
+                        migrated[key] = value;
                     }
-                    plannedHours = migrated;
-                } else {
-                    // Default / Example data
-                    plannedHours = {
-                        "Example Project": { type: 'monthly', total: 40, weeks: [] }
-                    };
                 }
-                if (result.actualHours) {
-                    actualHours = result.actualHours;
-                }
-                resolve();
-            });
+                plannedHours = migrated;
+            } else {
+                // Default / Example data
+                plannedHours = {
+                    "Example Project": { type: 'monthly', total: 40, weeks: [] }
+                };
+            }
+            if (storedActualHours) {
+                actualHours = JSON.parse(storedActualHours);
+            }
+            resolve();
         });
     }
 
     function saveSettings() {
-        chrome.storage.local.set({ plannedHours: plannedHours }, () => {
-            console.log("Settings saved");
-        });
+        localStorage.setItem('plannedHours', JSON.stringify(plannedHours));
+        console.log("Settings saved");
     }
 
     function renderSettings() {
@@ -482,79 +460,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function refreshDashboard() {
-        // 1. First, check if we have actuals from a previous XLSX upload
         if (actualHours && Object.keys(actualHours).filter(key => key !== 'meta').length > 0) {
             console.log("Rendering dashboard from stored XLSX data.");
             renderTable(actualHours);
-            return; // Don't proceed to scrape
+        } else {
+            console.log("No stored XLSX data found. Displaying empty table.");
+            tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #666;">No actuals data. Please upload an XLSX file in Settings.</td></tr>';
+            // Clear summary stats
+            document.getElementById('total-actual').textContent = formatHours(0);
+            document.getElementById('total-planned').textContent = formatHours(0);
+            document.getElementById('total-diff').textContent = formatHours(0);
+            document.getElementById('total-actual-planned').textContent = formatHours(0);
+            document.getElementById('unplanned-work').textContent = formatHours(0);
         }
-
-        // 2. If not, try to get Actuals from Content Script
-        console.log("No stored XLSX data found. Attempting to scrape from content script.");
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            const activeTab = tabs[0];
-            if (!activeTab || !activeTab.id) {
-                renderTable({}); // Clear table if tab is not accessible
-                return;
-            }
-
-            // Check for restricted URLs (chrome://, edge://, about:, etc.)
-            // We can check activeTab.url if we have permissions, but activeTab permission
-            // only grants access after user interaction. Since user clicked popup, we likely have it.
-            const url = activeTab.url || "";
-            if (url.startsWith("chrome://") || url.startsWith("edge://") || url.startsWith("about:") || url.startsWith("mozilla:") || url.startsWith("view-source:")) {
-                console.log(`Fusion Analyzer: Skipping scrape on restricted URL: ${url}`);
-                renderTable({});
-                return;
-            }
-
-            // Function to handle the response from the content script
-            const handleResponse = (response) => {
-                if (response && response.success) {
-                    actualHours = response.data; // Cache scraped data
-                    renderTable(actualHours);
-                } else if (response && response.error === "WRONG_PAGE_DASHBOARD") {
-                    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #d9534f; padding: 20px;"><b>Wrong Page Detected</b><br>You are on the Dashboard.<br>Please navigate to the <b>Daily Timesheet</b> page and click Refresh.</td></tr>';
-                } else {
-                    renderTable({});
-                }
-            };
-
-            // Attempt to send message FIRST
-            chrome.tabs.sendMessage(activeTab.id, { action: "scrape_hours" }, (response) => {
-                if (chrome.runtime.lastError) {
-                    // Message failed, likely because script isn't injected. Inject now.
-                    console.log("Content script not responding. Injecting scripts...", chrome.runtime.lastError.message);
-
-                    chrome.scripting.executeScript({
-                        target: { tabId: activeTab.id },
-                        files: ['scripts/utils.js', 'scripts/content.js']
-                    }, () => {
-                        if (chrome.runtime.lastError) {
-                            const errorMsg = chrome.runtime.lastError.message;
-                            console.warn("Fusion Analyzer: Could not scrape page (restricted or not loaded). Showing planned hours only.", errorMsg);
-                            // Fallback: Render with no actuals so user can still see planned hours
-                            renderTable({});
-                            return;
-                        }
-
-                        // Retry sending message after successful injection
-                        chrome.tabs.sendMessage(activeTab.id, { action: "scrape_hours" }, (response) => {
-                            if (chrome.runtime.lastError) {
-                                console.error("Message failed after injection:", chrome.runtime.lastError);
-                                renderTable({});
-                            } else {
-                                handleResponse(response);
-                            }
-                        });
-                    });
-                } else {
-                    // Message succeeded, script was already there
-                    console.log("Content script responded immediately.");
-                    handleResponse(response);
-                }
-            });
-        });
     }
 
     function renderTable(currentActuals) {

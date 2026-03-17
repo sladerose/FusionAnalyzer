@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fusion Timesheet Analyzer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script type="module" src="https://unpkg.com/@hotwired/turbo@8.0.4/dist/turbo.es2017-esm.js"></script>
+  <script type="module" src="https://unpkg.com/@hotwired/stimulus@3.2.2/dist/stimulus.js"></script>
+  <script type="module" src="{{ url_for('static', filename='javascript/application.js') }}"></script>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>Fusion Analyzer</h1>
+      <div class="tabs">
+        <a href="#dashboard" class="tab-btn active" data-turbo-frame="main-content">Dashboard</a>
+        <a href="#settings" class="tab-btn" data-turbo-frame="main-content">Settings</a>
+      </div>
+    </header>
+
+    <main>
+      <turbo-frame id="main-content">
+        <!-- Default content (Dashboard) goes here initially -->
+        <section id="view-dashboard" class="tab-content active" data-controller="dashboard">
+          <div class="view-controls"
+            style="margin-bottom: 15px; display: flex; justify-content: flex-end; align-items: center;">
+            <label for="view-mode-toggle" style="margin-right: 10px; font-weight: bold; font-size: 14px;">View
+              Mode:</label>
+            <select id="view-mode-toggle" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;"
+              data-dashboard-target="viewModeToggle" data-action="change->dashboard#changeViewMode">
+              <option value="monthly">Monthly Overview</option>
+              <option value="weekly">Current Week</option>
+            </select>
+          </div>
+
+          <div class="summary-card">
+            <div class="stat">
+              <span class="label">Total Actual</span>
+              <span class="value" id="total-actual" data-dashboard-target="totalActual">0.00</span>
+            </div>
+            <div class="stat">
+              <span class="label">Total Planned</span>
+              <span class="value" id="total-planned" data-dashboard-target="totalPlanned">0.00</span>
+            </div>
+            <div class="stat">
+              <span class="label">Difference</span>
+              <span class="value" id="total-diff" data-dashboard-target="totalDiff">0.00</span>
+            </div>
+            <div class="stat">
+              <span class="label">Actual Planned</span>
+              <span class="value" id="total-actual-planned" data-dashboard-target="totalActualPlanned">0.00</span>
+            </div>
+            <div class="stat">
+              <span class="label">Unplanned</span>
+              <span class="value" id="unplanned-work" data-dashboard-target="unplannedWork">0.00</span>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table id="analysis-table">
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Actual</th>
+                  <th>Planned</th>
+                  <th>Diff</th>
+                  <th>Forecast</th>
+                </tr>
+              </thead>
+              <tbody data-dashboard-target="tableBody">
+                <!-- Rows injected by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="actions">
+            <button id="btn-refresh" class="primary-btn" data-action="click->dashboard#refreshData">Refresh Data</button>
+            <!-- Removed Debug button -->
+          </div>
+        </section>
+
+        <!-- Settings Tab -->
+        <section id="view-settings" class="tab-content" data-controller="settings">
+          <div class="settings-header">
+            <h2>Upload Actuals (XLSX)</h2>
+            <p>Upload your monthly timesheet export from Fusion.</p>
+          </div>
+
+          <div class="upload-section" data-controller="xlsx-upload">
+            <input type="file" id="xlsx-upload-file-input" accept=".xlsx,.xls" style="display: none;"
+              data-xlsx-upload-target="fileInput" data-action="change->xlsx-upload#handleFileUpload">
+            <button type="button" id="btn-upload-xlsx" class="primary-btn" data-action="click->xlsx-upload#triggerFileInput">Choose XLSX File</button>
+            <p id="upload-status" style="margin-top: 10px; font-size: 12px; color: #666;"
+              data-xlsx-upload-target="uploadStatus"></p>
+            <details style="margin-top: 10px; font-size: 12px; color: #666;">
+              <summary style="cursor: pointer; color: #08bcf2;">How to export from Fusion</summary>
+              <ol style="margin-top: 5px; padding-left: 20px;">
+                <li>Go to Fusion Daily Timesheet</li>
+                <li>Set date range to "Month to Date"</li>
+                <li>Click "EXPORT" button</li>
+                <li>Upload the downloaded XLSX file here</li>
+              </ol>
+            </details>
+          </div>
+
+          <hr style="margin: 20px 0; border: 1px solid #e5e5e5;">
+
+          <div class="settings-header">
+            <h2>Planned Hours</h2>
+            <p>Set your monthly targets per project.</p>
+          </div>
+
+          <form id="settings-form" data-action="submit->settings#saveSettings">
+            <div id="projects-list" data-settings-target="projectsList">
+              <!-- Project inputs injected by JS -->
+            </div>
+
+            <div class="add-project">
+              <input type="text" id="new-project-name" placeholder="New Project Name"
+                data-settings-target="newProjectName">
+              <select id="new-project-mode" style="padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;"
+                data-settings-target="newProjectMode" data-action="change->settings#handleNewProjectModeChange">
+                <option value="monthly">Monthly</option>
+                <option value="weekly">Weekly</option>
+              </select>
+              <input type="number" id="new-project-hours" placeholder="Hours" step="0.5"
+                data-settings-target="newProjectHours">
+              <button type="button" id="btn-add-project" data-action="click->settings#addProject">Add</button>
+            </div>
+
+            <button type="submit" class="save-btn">Save Settings</button>
+          </form>
+        </section>
+      </turbo-frame>
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='xlsx.full.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='date-fns.min.js') }}"></script>
+</body>
+
+</html>
